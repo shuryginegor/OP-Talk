@@ -41,7 +41,7 @@ async def init_db():
             ''')
 
             # Тестовый запуск: добавляем ваш никнейм для тестов (без @)
-            test_user = 'your_test_username'
+            test_user = 'shurygin_egor'
             await conn.execute('''
                 INSERT INTO allowed_users (username) 
                 VALUES ($1) 
@@ -98,3 +98,7 @@ async def is_user_registered(telegram_id: int) -> bool:
             telegram_id
         )
         return result is not None
+
+
+async def add_allowed_user(username: str):
+    pass

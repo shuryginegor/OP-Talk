@@ -11,6 +11,15 @@ from dotenv import load_dotenv
 import database
 import fetch_talk
 
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import CommandStart
+from aiohttp_socks import ProxyConnector
+
+# Включаем логирование, чтобы видеть возможные ошибки подключения
+logging.basicConfig(level=logging.INFO)
+
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
@@ -103,11 +112,11 @@ async def check_meet_start(message: Message, state: FSMContext):
     is_registered = await database.is_user_registered(user_id)
 
     if not is_registered:
-        await message.answer("Пошел нахуй. Сначала авторицуйся.", reply_markup=get_auth_keyboard())
+        await message.answer("Пошел нахуй. Сначала авторизууйся.", reply_markup=get_auth_keyboard())
         return
 
     await state.set_state(MeetStates.wait_for_link)
-    await message.answer("Скинь ссылку на встречу:", reply_markup=ReplyKeyboardRemove())
+    await message.answer("Вы авторизованы!", reply_markup=ReplyKeyboardRemove())
 
 
 @dp.message(MeetStates.wait_for_link)
@@ -115,10 +124,12 @@ async def process_meet_link(message: Message, state: FSMContext):
     link = message.text.strip()
     await state.clear()
 
-    meet_available = await fetch_talk.is_meet_available(link)
+    meet_available = await fetch_talk.is_meet_available(link, fetch_talk.get_apik_key())
 
-    if meet_available:
-        await message.answer("✅ Встреча доступна!", reply_markup=get_main_keyboard())
+    if len(meet_available) != 0:
+        await message.answer(
+            f"✅ Встреча доступна. Информаиция овстрече\ntittle: {meet_available[0]}\nlogin: {meet_available[1]}\nname: {meet_available[2]}\nsurname: {meet_available[3]}",
+            reply_markup=get_main_keyboard())
     else:
         await message.answer("Нет такой встречи.", reply_markup=get_main_keyboard())
 

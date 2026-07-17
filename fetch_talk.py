@@ -7,6 +7,13 @@ from dotenv import load_dotenv
 from urllib.parse import urlparse
 
 
+def get_apik_key() -> str:
+    load_dotenv()
+    local_api_key = os.getenv("TALK_API_KEY")
+    return local_api_key
+
+
+
 def extract_record_id(url: str) -> str:
     """Извлекает уникальный ID записи (recordingKey) из ссылки."""
     match = re.search(r"/(?:recordings|records)/([a-zA-Z0-9\-]+)", url)
@@ -151,32 +158,27 @@ def download_all_artifacts_by_url(record_url: str, api_key: str) -> dict:
         return {"video": None, "transcript": None, "summary": None}
 
 
-def is_meet_available(rescord_url: str, api_key: str) -> bool:
+def is_meet_available(rescord_url: str, api_key: str) -> list[str]:
     base_url = get_base_url_from_url(rescord_url)
     recording_key = extract_record_id(rescord_url)
     """Скачивает видеозапись и возвращает её в виде потока io.BytesIO."""
     headers = {"X-Auth-Token": api_key, "Accept": "application/octet-stream"}
     endpoint = f"api/Domain/recordings/{recording_key}"
 
-    with requests.get(endpoint, headers=headers, params=params, stream=True) as response:
+    with requests.get(endpoint, headers=headers, stream=True) as response:
         if response.status_code != 200:
-            print(f"⚠️ Не удалось скачать видео (Код {response.status_code}): {response.text}")
-            return None
+            print(f"⚠️ Нет такой лекции (Код {response.status_code}): {response.text}")
+            return []
 
-        video_stream = io.BytesIO()
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                video_stream.write(chunk)
-
-        video_stream.seek(0)  # Сбрасываем указатель в начало потока для последующего чтения
-        print("✔️ Видео успешно загружено в буфер памяти.")
-        return video_stream
+        data = response.json()
+        tittle = data["tittle"]
+        created_by = [data["creaedBy"]["login"], data["createdBy"]["name"], data["createdBy"]["surname"]]
+        return [tittle, *created_by]
 
 
 # Пример использования, где файлы из потоков можно, например, отправить в S3, Telegram или сохранить на диск
 if __name__ == "__main__":
-    load_dotenv()
-    local_api_key = os.getenv("TALK_API_KEY")
+
     link = "https://5d5nbodd.ktalk.ru/recordings/xIu6mXwBVohle3V4anyX"
 
     # Получаем словарь с BytesIO потоками
