@@ -158,22 +158,24 @@ def download_all_artifacts_by_url(record_url: str, api_key: str) -> dict:
         return {"video": None, "transcript": None, "summary": None}
 
 
-def is_meet_available(rescord_url: str, api_key: str) -> list[str]:
+def is_meet_available(rescord_url: str, api_key: str) -> dict:
     base_url = get_base_url_from_url(rescord_url)
     recording_key = extract_record_id(rescord_url)
     """Скачивает видеозапись и возвращает её в виде потока io.BytesIO."""
     headers = {"X-Auth-Token": api_key, "Accept": "application/octet-stream"}
-    endpoint = f"api/Domain/recordings/{recording_key}"
+    endpoint = f"{base_url}/Domain/recordings/{recording_key}"
 
     with requests.get(endpoint, headers=headers, stream=True) as response:
         if response.status_code != 200:
             print(f"⚠️ Нет такой лекции (Код {response.status_code}): {response.text}")
-            return []
+            return {}
 
         data = response.json()
-        tittle = data["tittle"]
-        created_by = [data["creaedBy"]["login"], data["createdBy"]["name"], data["createdBy"]["surname"]]
-        return [tittle, *created_by]
+        return {"title": data["title"],
+                "login": data["createdBy"]["login"],
+                "name": data["createdBy"]["firstname"],
+                "surname": data["createdBy"]["surname"],
+                "date": data["createdDate"]}
 
 
 # Пример использования, где файлы из потоков можно, например, отправить в S3, Telegram или сохранить на диск

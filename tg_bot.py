@@ -35,6 +35,7 @@ ADMIN_USERNAMES = [name.strip().lower() for name in raw_admins.split(",") if nam
 
 class MeetStates(StatesGroup):
     wait_for_link = State()
+    wait_for_additional_information = State()
 
 
 def get_auth_keyboard():
@@ -44,6 +45,11 @@ def get_auth_keyboard():
 
 def get_main_keyboard():
     button = KeyboardButton(text="📅 Проверить встречу")
+    return ReplyKeyboardMarkup(keyboard=[[button]], resize_keyboard=True)
+
+
+def get_approuve_keyboard():
+    button = KeyboardButton(text="Подтверждаю")
     return ReplyKeyboardMarkup(keyboard=[[button]], resize_keyboard=True)
 
 
@@ -116,7 +122,7 @@ async def check_meet_start(message: Message, state: FSMContext):
         return
 
     await state.set_state(MeetStates.wait_for_link)
-    await message.answer("Вы авторизованы!", reply_markup=ReplyKeyboardRemove())
+    await message.answer("Жду ссылку.", reply_markup=ReplyKeyboardRemove())
 
 
 @dp.message(MeetStates.wait_for_link)
@@ -127,11 +133,18 @@ async def process_meet_link(message: Message, state: FSMContext):
     meet_available = await fetch_talk.is_meet_available(link, fetch_talk.get_apik_key())
 
     if len(meet_available) != 0:
+        await state.set_state(MeetStates.wait_for_additional_information)
         await message.answer(
-            f"✅ Встреча доступна. Информаиция овстрече\ntittle: {meet_available[0]}\nlogin: {meet_available[1]}\nname: {meet_available[2]}\nsurname: {meet_available[3]}",
-            reply_markup=get_main_keyboard())
+            f"✅ Встреча доступна. Информаиция овстрече\ntitle: {meet_available["title"]}\nlogin: {meet_available["login"]}\ndate: {meet_available["date"]}\nname: {meet_available["name"]}\nsurname: {meet_available["surname"]}. Если это та встреча, подтвердите это.",
+            reply_markup=get_approuve_keyboard())
     else:
         await message.answer("Нет такой встречи.", reply_markup=get_main_keyboard())
+
+
+@dp.message(MeetStates.wait_for_additional_information)
+async def process_additional_information(message: Message, state: FSMContext):
+    text = message.text.strip()
+    await state.clear()
 
 
 async def main():

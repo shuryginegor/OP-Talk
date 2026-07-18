@@ -25,20 +25,45 @@ async def init_db():
         db_pool = await asyncpg.create_pool(**DB_CONFIG)
 
         async with db_pool.acquire() as conn:
+            # Сносим старую таблицу, чтобы применилось правило UNIQUE
+            await conn.execute('DROP TABLE IF EXISTS allowed_users CASCADE;')
+            await conn.execute('DROP TABLE IF EXISTS authorized_users CASCADE;')
+            await conn.execute('DROP TABLE IF EXISTS responses CASCADE;')
             # 1. Таблица со списком РАЗРЕШЕННЫХ юзернеймов
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS allowed_users (
-                    username TEXT PRIMARY KEY
+                    ID INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                    username TEXT UNIQUE
                 )
             ''')
 
             # 2. Таблица АВТОРИЗОВАННЫХ пользователей
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS authorized_users (
-                    telegram_id BIGINT PRIMARY KEY,
+                    ID INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                    telegram_id BIGINT UNIQUE,
                     username TEXT
                 )
             ''')
+
+            await conn.execute("""
+            CREATE TABLE IF NOT EXISTS responses (
+                    ID BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                    telegram_id BIGINT,
+                    link TEXT,
+                    additional_info TEXT,
+                    point INTEGER,
+                    critical BOOLEAN,
+                    comment TEXT
+            )""")
+
+            # Тестовый запуск: добавляем ваш никнейм для тестов (без @)
+            test_user = 'shurygin_egor'
+            await conn.execute('''
+                INSERT INTO allowed_users (username) 
+                VALUES ($1) 
+                ON CONFLICT (username) DO NOTHING
+            ''', test_user.lower())
 
             # Тестовый запуск: добавляем ваш никнейм для тестов (без @)
             test_user = 'shurygin_egor'
@@ -100,5 +125,35 @@ async def is_user_registered(telegram_id: int) -> bool:
         return result is not None
 
 
-async def add_allowed_user(username: str):
-    pass
+async def add_allowed_user(username: str) -> None:
+    if not db_pool:
+        raise RuntimeError("Пул базы данных не инициализирован.")
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            f"INSERT INTO allowed_users (username) VALUES ({username})"
+        )
+        return
+
+
+async def write_result(id: int, point: int, is_critical: bool, ai_comment: str) -> None:
+    if not db_pool:
+        raise RuntimeError("Пул базы данных не инициализирован.")
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO responses (point, critical, comment) "
+            "VALUES ($1, $2, $3) WHERE ID = $4",
+            point, is_critical, ai_comment, id
+        )
+        return
+
+
+async def write_response(tg_id: int, link: str, additional_info: str) -> int:
+    if not db_pool:
+        raise RuntimeError("Пул базы данных не инициализирован.")
+    async with db_pool.acquire() as conn:
+        response_id = await conn.fetchval(
+            "INSERT INTO responses (telegram_id, link, additional_info) "
+            "VALUES ($1, $2, $3) RETURNING ID",
+            tg_id, link, additional_info
+        )
+        return response_id
