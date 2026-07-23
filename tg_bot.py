@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 
 import database
 import fetch_talk
+import ai
 
 # Включаем логирование
 logging.basicConfig(level=logging.INFO)
@@ -89,6 +90,24 @@ async def cmd_add_user(message: Message):
         await message.answer("❌ Произошла ошибка при сохранении в базу данных.")
 
 
+@dp.message(Command("del"))
+async def cmd_del_user(message: Message):
+    username = message.from_user.username
+    if not username or username.lower() not in ADMIN_USERNAMES:
+        await message.answer("Пошел нахуй.")
+        return
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("⚠️ Использование команды: `/del username`")
+        return
+    target_username = args[1].strip()
+    success = await database.delete_user(target_username)
+    if success:
+        await message.answer(f"✅ Юзернейм `{target_username}` успешно удален из белого списка!")
+    else:
+        await message.answer("❌ Произошла ошибка при сохранении в базу данных.")
+
+
 # --- Блок Обычного Пользователя ---
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
@@ -114,7 +133,7 @@ async def process_authorization(message: Message):
                 reply_markup=get_main_keyboard()
             )
         else:
-            await message.answer("Пошел нахуй.")
+            await message.answer("Вас нет в базе данных. Обратитесь к администратору для добавления вас.")
     except Exception as e:
         logging.error(f"Ошибка при обработке авторизации: {e}")
         await message.answer("❌ Произошла техническая ошибка при проверке доступа.")
@@ -135,7 +154,7 @@ async def check_meet_start(message: Message, state: FSMContext):
 async def process_meet_link(message: Message, state: FSMContext):
     link = message.text.strip()
 
-    meet_available = await fetch_talk.is_meet_available(link, fetch_talk.get_apik_key())
+    meet_available = await fetch_talk.is_meet_available(link, fetch_talk.get_api_key())
     if len(meet_available) != 0:
         # Временно сохраняем ссылку в память FSM
         await state.update_data(saved_link=link)
@@ -144,7 +163,7 @@ async def process_meet_link(message: Message, state: FSMContext):
             f"✅ Встреча доступна. Информаиция овстрече\ntitle: "
             f"{meet_available['title']}\nlogin: {meet_available['login']}\ndate: "
             f"{meet_available['date']}\nname: {meet_available['name']}\nsurname: "
-            f"{meet_available['surname']}. Если это та встреча, подтвердите это.",
+            f"{meet_available['surname']}.\n Если это та встреча, подтвердите это.",
             reply_markup=get_meet_inline_keyboard()
         )
     else:
@@ -205,11 +224,22 @@ async def process_confirm_info_data(callback: CallbackQuery, state: FSMContext):
         logging.info(f"Успешная запись в БД. ID строки: {response_id}")
 
         await callback.message.answer(
-            f"Встреча успешно подтверждена и сохранена!\nВот ваша ссылка: {link}",
-            reply_markup=get_main_keyboard()
+            f"Встреча успешно подтверждена и сохранена!\nВот ваша ссылка: {link}"
         )
+        logging.info(f"Получаем артефакты лекции {link}")
+        artifacts = await fetch_talk.download_all_artifacts_by_url(link, fetch_talk.get_api_key())
+        if artifacts["video"] is None:
+            await callback.message.answer(f"Встречу не удалось скачать, попробуйте еще раз",
+                                          reply_markup=get_main_keyboard())
+            return
+        await callback.message.answer(f"Встреча отправлена на проверку ИИ")
+        mark = await ai.process(artifacts)
+        await fetch_talk.delete_files(artifacts)
+        await callback.message.answer(f"Встреча проверена: {mark}")
+        await database.write_result(tg_id, mark["point"], mark["is_critical"], mark["comment"])
+
     except Exception as e:
-        logging.error(f"Ошибка при записи ответа в БД: {e}")
+        logging.error(f"Ошибка: {e}")
         await callback.message.answer("❌ Произошла ошибка при сохранении данных в БД.",
                                       reply_markup=get_main_keyboard())
     finally:

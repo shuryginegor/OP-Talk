@@ -66,7 +66,7 @@ async def init_db():
             ''', test_user.lower())
 
             # Тестовый запуск: добавляем ваш никнейм для тестов (без @)
-            test_user = 'shurygin_egor'
+            test_user = 'aemss72'
             await conn.execute('''
                 INSERT INTO allowed_users (username) 
                 VALUES ($1) 
@@ -135,16 +135,32 @@ async def add_allowed_user(username: str) -> None:
         return
 
 
+async def del_user(username: str) -> None:
+    if not db_pool:
+        raise RuntimeError("Пул базы данных не инициализирован.")
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            f"DELETE FROM allowed_users WHERE username = $1",
+            username
+        )
+        await conn.execute(
+            f"DELETE FROM authorized_users WHERE username = $1",
+            username
+        )
+        return
+
+
 async def write_result(id: int, point: int, is_critical: bool, ai_comment: str) -> None:
     if not db_pool:
         raise RuntimeError("Пул базы данных не инициализирован.")
     async with db_pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO responses (point, critical, comment) "
-            "VALUES ($1, $2, $3) WHERE ID = $4",
+            "UPDATE responses "
+            "SET point = $1, critical = $2, comment = $3 "
+            "WHERE id = $4",
             point, is_critical, ai_comment, id
         )
-        return
+
 
 
 async def write_response(tg_id: int, link: str, additional_info: str) -> int:
